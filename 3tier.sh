@@ -13,7 +13,7 @@ DOMAIN=$1
 mkdir -p pki/root pki/intermediate pki/certificates && cd pki
 
 
-cat << "EOF" > root/root-csr.json
+cat > root/root-csr.json <<EOF
 {
   "CN": "Root Certificate Authority",
   "key": {
@@ -38,7 +38,7 @@ cfssl gencert -initca root/root-csr.json | cfssljson -bare root/root-ca
 
 
 
-cat << "EOF" > intermediate/sign1-csr.json
+cat > intermediate/sign1-csr.json <<EOF
 {
   "CN": "Intermediate CA",
   "key": {
@@ -61,7 +61,7 @@ cfssl genkey intermediate/sign1-csr.json | cfssljson -bare intermediate/sign1-ca
 
 
 
-cat << "EOF" > config.json
+cat > config.json <<EOF
 {
   "signing": {
     "default": {
@@ -108,7 +108,10 @@ cfssl sign -ca root/root-ca.pem \
 cat > certificates/${DOMAIN}-csr.json <<EOF
 {
   "CN": "DevOps",
-  "hosts": ["*.${DOMAIN}"],
+  "hosts": [
+    "${DOMAIN}",
+    "*.${DOMAIN}"
+  ],
   "names": [
     {
       "C": "VN",
