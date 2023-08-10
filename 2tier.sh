@@ -9,82 +9,89 @@ fi
 
 DOMAIN=$1
 
-# Create root CA & Private key
 
-openssl req -x509 \
-            -sha256 -days 356 \
-            -nodes \
-            -newkey rsa:2048 \
-            -subj "/CN=DisionTechInternal-RootCA/C=VN/L=HCM" \
-            -keyout rootCA.key -out rootCA.crt 
+mkdir -p pki/root pki/certificates && cd pki
 
-# Generate Private key 
 
-openssl genrsa -out ${DOMAIN}.key 2048
-
-# Create csf conf
-
-cat > csr.conf <<EOF
-[ req ]
-default_bits = 2048
-prompt = no
-default_md = sha256
-req_extensions = req_ext
-distinguished_name = dn
-
-[ dn ]
-C = VM
-ST = HCM
-O = DS
-OU = DS Devops
-CN = ${DOMAIN}
-
-[ req_ext ]
-subjectAltName = @alt_names
-
-[ alt_names ]
-DNS.1 = ${DOMAIN}
-DNS.2 = *.${DOMAIN}
-
+cat > root/root-csr.json <<EOF
+{
+  "CN": "Root Certificate Authority",
+  "key": {
+    "algo": "ecdsa",
+    "size": 384
+  },
+  "names": [
+    {
+      "C": "VN",
+      "L": "Ho Chi Minh",
+      "O": "Devops"
+    }
+  ],
+  "ca": {
+    "expiry": "175200h"
+  }
+}
 EOF
 
-# create CSR request using private key
 
-openssl req -new -key ${DOMAIN}.key -out ${DOMAIN}.csr -config csr.conf
+cfssl gencert -initca root/root-csr.json | cfssljson -bare root/root-ca
 
-# Create a external config file for the certificate
-
-cat > cert.conf <<EOF
-
-authorityKeyIdentifier=keyid,issuer
-basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = ${DOMAIN}
-DNS.2 = *.${DOMAIN}
-
+cat > config.json <<EOF
+{
+  "signing": {
+    "default": {
+      "expiry": "26280h"
+    },
+    "profiles": {
+      "intermediate": {
+        "usages": [
+          "cert sign",
+          "crl sign"
+        ],
+        "expiry": "140160h",
+        "ca_constraint": {
+          "is_ca": true,
+          "max_path_len": 1
+        }
+      },
+      "server": {
+        "usages": [
+          "signing",
+          "digital signing",
+          "key encipherment",
+          "server auth"
+        ],
+        "expiry": "26280h"
+      }
+    }
+  }
+}
 EOF
 
-# Create SSl with self signed CA
 
-openssl x509 -req \
-    -in ${DOMAIN}.csr \
-    -CA rootCA.crt -CAkey rootCA.key \
-    -CAcreateserial -out ${DOMAIN}.crt \
-    -days 365 \
-    -sha256 -extfile cert.conf
-	
-# Clean up folder	
-rm ${DOMAIN}.csr
-rm cert.conf
-rm csr.conf
-rm rootCA.srl
+cat > certificates/${DOMAIN}-csr.json <<EOF
+{
+  "CN": "DevOps",
+  "hosts": [
+    "${DOMAIN}",
+    "*.${DOMAIN}"
+  ],
+  "names": [
+    {
+      "C": "VN",
+      "L": "Ho Chi Minh",
+      "O": "Hosts Internal",
+      "OU": "Internal Hosts"
+    }
+  ]
+}
+EOF
 
-# Structure folder
-mkdir -p rootCert serverCert
-mv ${DOMAIN}* serverCert
-mv rootCA* rootCert
 
-
+cfssl gencert \
+  -ca root/root-ca.pem \
+  -ca-key root/root-ca-key.pem \
+  -config config.json \
+  -profile server \
+  certificates/${DOMAIN}-csr.json \
+| cfssljson -bare certificates/${DOMAIN}
